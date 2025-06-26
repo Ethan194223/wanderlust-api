@@ -11,8 +11,24 @@ model User {
   id           String   @id @default(uuid())
   email        String   @unique
   passwordHash String   @map("password_hash")
+  name         String?              // optional display-name
   createdAt    DateTime @default(now()) @map("created_at")
 }
+
+model Hotel {
+  id             String   @id @default(uuid())
+  name           String
+  description    String?
+  city           String
+  country        String
+  pricePerNight  Decimal   @map("price_per_night")
+  availableFrom  DateTime  @map("available_from")
+  availableTo    DateTime  @map("available_to")
+  createdAt      DateTime  @default(now()) @map("created_at")
+}
+
+
+
 
 
 
