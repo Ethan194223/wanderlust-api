@@ -7,11 +7,19 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/* ----------  ENUM  ---------- */
+enum Role {
+  PUBLIC
+  OPERATOR
+}
+
+/* ----------  MODELS ---------- */
 model User {
   id           String   @id @default(uuid())
   email        String   @unique
-  passwordHash String   @map("password_hash")
-  name         String?              // optional display-name
+  passwordHash String   @map("password_hash")   // 🔹 keep old name
+  role         Role     @default(PUBLIC)        // 🔹 NEW
+  name         String?                          // optional display-name
   createdAt    DateTime @default(now()) @map("created_at")
 }
 
@@ -26,6 +34,7 @@ model Hotel {
   availableTo    DateTime  @map("available_to")
   createdAt      DateTime  @default(now()) @map("created_at")
 }
+
 
 
 

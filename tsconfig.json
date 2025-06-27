@@ -5,7 +5,7 @@
 
     "lib": ["ES2020", "DOM"],
 
-    "rootDir": "src",
+    // "rootDir": "src",          // ← removed so tests outside /src are allowed
     "outDir": "dist",
 
     "strict": true,
@@ -14,9 +14,7 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
 
-    /*
-     * 👉  Jest & Node types – so TS knows about global `describe`, `it`, etc.
-     */
+    /* 👉  Jest & Node types – so TS knows about global `describe`, `it`, etc. */
     "types": ["node", "jest"],
 
     "baseUrl": ".",
@@ -25,6 +23,10 @@
     }
   },
 
-  "include": ["src/**/*.ts", "tests/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "tests/**/*.ts"              // tests folder stays included
+  ]
 }
+
 

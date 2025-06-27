@@ -8,11 +8,7 @@ export interface JWTPayload {
   exp: number;
 }
 
-declare module "express-serve-static-core" {
-  interface Request {
-    user?: JWTPayload;
-  }
-}
+
 
 export function jwtAuth(req: Request, res: Response, next: NextFunction) {
   const header = req.headers.authorization;

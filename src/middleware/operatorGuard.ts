@@ -1,11 +1,22 @@
-import { Request, Response, NextFunction } from "express";
+import { Request, Response, NextFunction } from 'express';
 
-export function operatorGuard(req: Request, res: Response, next: NextFunction) {
+/**
+ * Allows requests that come from a JWT whose payload contains role==="OPERATOR".
+ * Must be mounted **after** jwtAuth (so req.user is already populated).
+ */
+export function operatorGuard(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
   if (!req.user) {
-    return res.status(401).json({ message: "Missing token" });
+    // jwtAuth wasn’t called or token missing
+    return res.status(401).json({ message: 'Missing or invalid token' });
   }
-  if (req.user.role !== "operator") {
-    return res.status(403).json({ message: "Forbidden – operator only" });
+
+  if (req.user.role !== 'OPERATOR') {
+    return res.status(403).json({ message: 'Forbidden – operator only' });
   }
-  next();
+
+  next(); // authorised ✅
 }

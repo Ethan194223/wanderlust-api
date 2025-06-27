@@ -1,80 +1,91 @@
-/*src/routes/auth.ts  */
-import { Router, Request, Response } from "express";
-import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
-import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+/* ----------------------------------------------------------------
+ *  src/routes/auth.ts   (debug version)
+ * ---------------------------------------------------------------- */
+import { Router, Request, Response } from 'express';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import { z } from 'zod';
+
+import prisma from '@/lib/prisma';
+
+export interface JWTPayload {
+  sub: string;
+  role: 'PUBLIC' | 'OPERATOR';
+}
 
 const router = Router();
+const JWT_SECRET  = process.env.JWT_SECRET  as string;
+const SIGNUP_CODE = process.env.SIGNUP_CODE as string;
 
-// ---------- Schemas ----------
+/* ---------- Schemas ---------- */
 const registerSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
+  email:      z.string().email(),
+  password:   z.string().min(8),
   signupCode: z.string(),
 });
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  email:    z.string().email(),
   password: z.string().min(8),
 });
 
-// ---------- Helpers ----------
-function signToken(id: string, role: "operator" | "public") {
-  return jwt.sign({ sub: id, role }, process.env.JWT_SECRET as string, {
-    expiresIn: "2h",
+/* ---------- Helper ---------- */
+function signToken(
+  id: string,
+  role: 'PUBLIC' | 'OPERATOR',
+  ttl: jwt.SignOptions['expiresIn'] = '2h'
+) {
+  return jwt.sign({ sub: id, role }, JWT_SECRET as jwt.Secret, {
+    expiresIn: ttl,
   });
 }
 
-// ---------- Routes ----------
-router.post("/register", async (req: Request, res: Response) => {
-  // 1. Validate
+/* =================================================================
+ *  POST /auth/register
+ * ================================================================= */
+router.post('/register', async (req: Request, res: Response) => {
+  console.log('👉 guarded /register handler');    //  ← TEMP debug line
+
   const parse = registerSchema.safeParse(req.body);
   if (!parse.success) {
     return res.status(422).json({ errors: parse.error.flatten() });
   }
   const { email, password, signupCode } = parse.data;
 
-  // 2. Sign-up-code gate
-  if (signupCode !== process.env.SIGNUP_CODE) {
-    return res.status(403).json({ message: "Invalid sign-up code" });
+  // sign-up-code gate
+  if (signupCode !== SIGNUP_CODE) {
+    return res.status(403).json({ message: 'Invalid sign-up code' });
   }
 
-  // 3. Hash pw & create user
-  const hashed = await bcrypt.hash(password, 12);
+  const passwordHash = await bcrypt.hash(password, 12);
   const user = await prisma.user.create({
-    data: { email, password: hashed, role: "operator" },
+    data: { email, passwordHash, role: 'OPERATOR' },
   });
 
-  // 4. JWT
-  const token = signToken(user.id, "operator");
+  const token = signToken(user.id, 'OPERATOR');
   return res.status(201).json({ token });
 });
 
-router.post("/login", async (req: Request, res: Response) => {
-  // 1. Validate
+/* =================================================================
+ *  POST /auth/login
+ * ================================================================= */
+router.post('/login', async (req: Request, res: Response) => {
   const parse = loginSchema.safeParse(req.body);
   if (!parse.success) {
     return res.status(422).json({ errors: parse.error.flatten() });
   }
   const { email, password } = parse.data;
 
-  // 2. Find user
   const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) {
-    return res.status(401).json({ message: "Invalid credentials" });
-  }
+  if (!user) return res.status(401).json({ message: 'Login failed' });
 
-  // 3. Verify pw
-  const ok = await bcrypt.compare(password, user.password);
-  if (!ok) {
-    return res.status(401).json({ message: "Invalid credentials" });
-  }
+  const ok = await bcrypt.compare(password, user.passwordHash);
+  if (!ok) return res.status(401).json({ message: 'Login failed' });
 
-  // 4. JWT
-  const token = signToken(user.id, user.role as "operator" | "public");
+  const token = signToken(user.id, user.role);
   return res.status(200).json({ token });
 });
 
 export default router;
+
 

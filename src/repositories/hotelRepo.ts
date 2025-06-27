@@ -1,5 +1,5 @@
 // src/repositories/hotelRepo.ts
-import { prisma } from '../utils/prisma';
+import { prisma } from '@/utils/prisma';
 import { Hotel, Prisma } from '@prisma/client';
 
 /** All writable fields (DB fills `id` and `createdAt`). */

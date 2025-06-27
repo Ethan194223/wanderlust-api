@@ -5,7 +5,7 @@ declare global {
   namespace Express {
     interface Request {
       /** present after `requireAuth` succeeds */
-      userId?: string;
+      user?: JWTPayload;
     }
   }
 }
