@@ -1,51 +1,37 @@
 // src/repositories/hotelRepo.ts
-import { prisma } from '../utils/prisma';            // shared Prisma instance
-import { Hotel } from '@prisma/client';
+import { prisma } from '../utils/prisma';
+import { Hotel, Prisma } from '@prisma/client';
+
+/** All writable fields (DB fills `id` and `createdAt`). */
+type HotelInput = Omit<Hotel, 'id' | 'createdAt'>;
 
 export const HotelRepo = {
-  /*───────────────────────────*
-   *        C R E A T E        *
-   *───────────────────────────*/
-
-  /** Insert a new hotel (DB fills in `id` & `createdAt`). */
-  create(data: Omit<Hotel, 'id' | 'createdAt'>) {
+  /*───────────── C R E A T E ─────────────*/
+  create(data: HotelInput) {
     return prisma.hotel.create({ data });
   },
 
-  /*───────────────────────────*
-   *          R E A D          *
-   *───────────────────────────*/
-
-  /** List every hotel that matches the optional filter object. */
-  list(filters: Partial<Hotel> = {}) {
+  /*────────────── R E A D ───────────────*/
+  list(filters: Partial<HotelInput> = {}) {
     return prisma.hotel.findMany({ where: filters });
   },
 
-  /** Fetch exactly one hotel by primary key. */
   findById(id: string) {
     return prisma.hotel.findUnique({ where: { id } });
   },
 
-  /*───────────────────────────*
-   *        U P D A T E        *
-   *───────────────────────────*/
-
-  /** Patch only the fields supplied in `data`. */
-  update(id: string, data: Partial<Hotel>) {
+  /*────────────── U P D A T E ───────────────*/
+  update(id: string, data: Partial<HotelInput>) {
     return prisma.hotel.update({ where: { id }, data });
   },
 
-  /*───────────────────────────*
-   *        D E L E T E        *
-   *───────────────────────────*/
-
+  /*────────────── D E L E T E ───────────────*/
   /**
-   * Permanently delete a hotel by id.
-   * Prismas `deleteMany → { count }` **never throws** when zero rows match,
-   * so the caller can translate `count` into 204 (deleted) or 404 (not-found).
+   * Permanently delete a hotel by ID.
+   * Returns `1` when a row was removed, `0` when nothing matched.
    */
   async remove(id: string) {
     const { count } = await prisma.hotel.deleteMany({ where: { id } });
-    return count;        // 1 ⇢ a row was removed, 0 ⇢ nothing matched
+    return count;
   },
 };
