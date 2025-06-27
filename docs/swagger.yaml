@@ -1,0 +1,90 @@
+openapi: 3.0.3
+info:
+  title: Wanderlust API
+  version: "1.0.0"
+  description: |
+    REST API for Wanderlust coursework – authentication, hotels, profiles.
+
+servers:
+  - url: http://localhost:3000
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterBody'
+          responses:
+        '201': { description: Created }
+        '403': { description: Invalid signup code }
+        '422': { description: Validation error }
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login and receive JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginBody'
+      responses:
+        "200": { description: OK }
+        "401": { description: Login failed }
+        "422": { description: Validation error }
+
+  /hotels:
+    get:
+      tags: [Hotels]
+      summary: List hotels with pagination & filters
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 5, maximum: 50 }
+        - in: query
+          name: city
+          schema: { type: string }
+        - in: query
+          name: priceMin
+          schema: { type: number, minimum: 0 }
+        - in: query
+          name: priceMax
+          schema: { type: number, minimum: 0 }
+      responses:
+        "200":
+          description: Paged list of hotels
+
+components:
+  schemas:
+    RegisterBody:
+      type: object
+      properties:
+        email:    { type: string, format: email }
+        password: { type: string, minLength: 8 }
+        name:     { type: string }
+        signupCode: { type: string }
+      required: [email, password]
+    LoginBody:
+      type: object
+      properties:
+        email:    { type: string, format: email }
+        password: { type: string }
+      required: [email, password]
