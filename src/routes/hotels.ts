@@ -1,3 +1,4 @@
+// src/routes/hotels.ts
 import { Router } from 'express';
 import requireAuth from '../middleware/requireAuth';
 import { HotelRepo } from '../repositories/hotelRepo';
@@ -16,8 +17,31 @@ const hotelBody = z.object({
   availableTo: z.coerce.date(),
 });
 
-/* ───────────── CRUD ───────────── */
-// CREATE (protected)
+const idParam = z.string().uuid();
+
+/* ───────────── helpers ───────────── */
+function parseId(id: string) {
+  const parsed = idParam.safeParse(id);
+  if (!parsed.success) throw Object.assign(new Error('Invalid hotel id'), { status: 400 });
+  return parsed.data;
+}
+
+function buildListFilter(q: any) {
+  const { city, country, minPrice, maxPrice } = q;
+  const where: Record<string, any> = {};
+
+  if (city) where.city = city as string;
+  if (country) where.country = country as string;
+  if (minPrice || maxPrice) {
+    where.pricePerNight = {
+      ...(minPrice ? { gte: Number(minPrice) } : {}),
+      ...(maxPrice ? { lte: Number(maxPrice) } : {}),
+    };
+  }
+  return where;
+}
+
+/* ───────────── CREATE ───────────── */
 router.post('/', requireAuth, async (req, res, next) => {
   try {
     const data = hotelBody.parse(req.body);
@@ -28,51 +52,47 @@ router.post('/', requireAuth, async (req, res, next) => {
   }
 });
 
-// LIST (public, with basic filters ?city=&country=&minPrice=&maxPrice=)
+/* ───────────── LIST ───────────── */
 router.get('/', async (req, res, next) => {
   try {
-    const { city, country, minPrice, maxPrice } = req.query;
-    const hotels = await HotelRepo.list({
-      city: city as string | undefined,
-      country: country as string | undefined,
-      pricePerNight: {
-        gte: minPrice ? Number(minPrice) : undefined,
-        lte: maxPrice ? Number(maxPrice) : undefined,
-      },
-    });
+    const hotels = await HotelRepo.list(buildListFilter(req.query));
     res.json(hotels);
   } catch (err) {
     next(err);
   }
 });
 
-// READ one
+/* ───────────── READ ONE ───────────── */
 router.get('/:id', async (req, res, next) => {
   try {
-    const hotel = await HotelRepo.findById(req.params.id);
-    if (!hotel) return res.status(404).json({ msg: 'Not found' });
+    const id = parseId(req.params.id);
+    const hotel = await HotelRepo.findById(id);
+    if (!hotel) return res.status(404).json({ msg: 'Hotel not found' });
     res.json(hotel);
   } catch (err) {
     next(err);
   }
 });
 
-// UPDATE (protected)
+/* ───────────── UPDATE ───────────── */
 router.patch('/:id', requireAuth, async (req, res, next) => {
   try {
+    const id = parseId(req.params.id);
     const data = hotelBody.partial().parse(req.body);
-    const hotel = await HotelRepo.update(req.params.id, data);
+    const hotel = await HotelRepo.update(id, data);
     res.json(hotel);
   } catch (err) {
     next(err);
   }
 });
 
-// DELETE (protected)
+/* ───────────── DELETE ───────────── */
 router.delete('/:id', requireAuth, async (req, res, next) => {
   try {
-    await HotelRepo.remove(req.params.id);
-    res.status(204).end();
+    const id = parseId(req.params.id);
+    const deleted = await HotelRepo.remove(id);        // returns count
+    if (deleted === 0) return res.status(404).json({ msg: 'Hotel not found' });
+    res.status(204).end();                             // success, no body
   } catch (err) {
     next(err);
   }
