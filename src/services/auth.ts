@@ -1,67 +1,53 @@
 // src/services/auth.ts
+import prisma from '../lib/prisma';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import prisma from '@/lib/prisma';          // ◄─ default import (NOT { prisma })
-import type { User } from '@prisma/client';
 
-/* ------------------------------------------------------------------ */
-/* CONFIG                                                             */
-/* ------------------------------------------------------------------ */
+type Role = 'PUBLIC' | 'OPERATOR';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
-const SALT_ROUNDS = 12;
-
-/* ------------------------------------------------------------------ */
-/* PUBLIC API                                                         */
-/* ------------------------------------------------------------------ */
-
-/** Create a new user and return the “safe” user object. */
-export async function createUser(email: string, password: string) {
-  const hash = await bcrypt.hash(password, SALT_ROUNDS);
-
-  const user = await prisma.user.create({
-    data: { email, passwordHash: hash },
-  });
-
-  return omitHash(user);
+/* helper ------------------------------------------------------------------- */
+function signToken(id: string, role: Role) {
+  return jwt.sign({ id, role }, process.env.JWT_SECRET as string, { expiresIn: '1h' });
 }
 
-/** Verify credentials. Returns `{ user, token }` on success, otherwise `null`. */
+/* login -------------------------------------------------------------------- */
 export async function authenticate(email: string, password: string) {
   const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) return null;
-
-  const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) return null;
-
-  return {
-    user: omitHash(user),
-    token: signJwt(user.id),
-  };
+  if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+    throw new Error('Invalid credentials');
+  }
+  return signToken(user.id, user.role as Role);
 }
 
-/** Return a “safe” user (or `null`) by primary-key ID. */
-export async function getMe(userId: string) {
-  return prisma.user.findUnique({
-    where: { id: userId },
-    select: { id: true, email: true, role: true, createdAt: true },
+/* register ----------------------------------------------------------------- */
+export async function register(args: {
+  email: string;
+  password: string;
+  signUpCode?: string;
+}) {
+  const role: Role =
+    args.signUpCode === process.env.OPERATOR_SIGNUP_CODE ? 'OPERATOR' : 'PUBLIC';
+
+  const user = await prisma.user.create({
+    data: {
+      email: args.email,
+      passwordHash: await bcrypt.hash(args.password, 10),
+      role,
+    },
   });
+
+  return signToken(user.id, role);
 }
 
-/* ------------------------------------------------------------------ */
-/* HELPERS                                                            */
-/* ------------------------------------------------------------------ */
-
-function signJwt(sub: string) {
-  return jwt.sign({ sub }, JWT_SECRET, { expiresIn: '1h' });
+/* NEW  ➜  read own profile -------------------------------------------------- */
+export async function getMe(id: string) {
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) throw new Error('User not found');
+  return user;
 }
 
-type SafeUser = Pick<User, 'id' | 'email' | 'role' | 'createdAt'>;
+/* default export so `import Auth from…` works ------------------------------- */
+export default { authenticate, register, getMe };
 
-function omitHash(user: User): SafeUser {
-  /* strip the hash before returning the record */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { passwordHash, ...safe } = user;
-  return safe;
-}
+
 

@@ -1,32 +1,37 @@
 // src/routes/hotels.ts
 import { Router } from 'express';
+import { z } from 'zod';
+import { Prisma } from '@prisma/client';
+
 import requireAuth from '../middleware/requireAuth';
 import { HotelRepo } from '../repositories/hotelRepo';
-import { z } from 'zod';
 
 const router = Router();
 
-/* ───────────── validation schemas ───────────── */
+/* ────────────────── validation schemas ────────────────── */
 const hotelBody = z.object({
   name: z.string().min(3),
-  description: z.string().optional(),
+  description: z.string().nullable().default(null),          // nullable ↔ Prisma type
   city: z.string(),
   country: z.string(),
-  pricePerNight: z.coerce.number().positive(),
+  pricePerNight: z
+    .coerce.number()
+    .positive()
+    .transform(v => new Prisma.Decimal(v)),                  // number → Decimal
   availableFrom: z.coerce.date(),
   availableTo: z.coerce.date(),
 });
 
 const idParam = z.string().uuid();
 
-/* ───────────── helpers ───────────── */
+/* ────────────────────── helpers ────────────────────────── */
 function parseId(id: string) {
   const parsed = idParam.safeParse(id);
   if (!parsed.success) throw Object.assign(new Error('Invalid hotel id'), { status: 400 });
   return parsed.data;
 }
 
-function buildListFilter(q: any) {
+function buildListFilter(q: Record<string, unknown>) {
   const { city, country, minPrice, maxPrice } = q;
   const where: Record<string, any> = {};
 
@@ -34,14 +39,14 @@ function buildListFilter(q: any) {
   if (country) where.country = country as string;
   if (minPrice || maxPrice) {
     where.pricePerNight = {
-      ...(minPrice ? { gte: Number(minPrice) } : {}),
-      ...(maxPrice ? { lte: Number(maxPrice) } : {}),
+      ...(minPrice ? { gte: new Prisma.Decimal(minPrice as string) } : {}),
+      ...(maxPrice ? { lte: new Prisma.Decimal(maxPrice as string) } : {}),
     };
   }
   return where;
 }
 
-/* ───────────── CREATE ───────────── */
+/* ────────────────────── CREATE ─────────────────────────── */
 router.post('/', requireAuth, async (req, res, next) => {
   try {
     const data = hotelBody.parse(req.body);
@@ -52,7 +57,7 @@ router.post('/', requireAuth, async (req, res, next) => {
   }
 });
 
-/* ───────────── LIST ───────────── */
+/* ────────────────────── LIST ───────────────────────────── */
 router.get('/', async (req, res, next) => {
   try {
     const hotels = await HotelRepo.list(buildListFilter(req.query));
@@ -62,7 +67,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-/* ───────────── READ ONE ───────────── */
+/* ────────────────────── READ ONE ───────────────────────── */
 router.get('/:id', async (req, res, next) => {
   try {
     const id = parseId(req.params.id);
@@ -74,7 +79,7 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-/* ───────────── UPDATE ───────────── */
+/* ────────────────────── UPDATE ─────────────────────────── */
 router.patch('/:id', requireAuth, async (req, res, next) => {
   try {
     const id = parseId(req.params.id);
@@ -86,13 +91,13 @@ router.patch('/:id', requireAuth, async (req, res, next) => {
   }
 });
 
-/* ───────────── DELETE ───────────── */
+/* ────────────────────── DELETE ─────────────────────────── */
 router.delete('/:id', requireAuth, async (req, res, next) => {
   try {
     const id = parseId(req.params.id);
-    const deleted = await HotelRepo.remove(id);        // returns count
+    const deleted = await HotelRepo.remove(id);           // returns count
     if (deleted === 0) return res.status(404).json({ msg: 'Hotel not found' });
-    res.status(204).end();                             // success, no body
+    res.status(204).end();                                // success, no body
   } catch (err) {
     next(err);
   }
