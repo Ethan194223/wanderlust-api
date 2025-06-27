@@ -1,27 +1,29 @@
 /* ----------------------------------------------------------------
- *  src/routes/auth.ts   (debug version)
+ *  src/routes/auth.ts
  * ---------------------------------------------------------------- */
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
-
 import prisma from '@/lib/prisma';
 
+/* ---------- types ---------- */
 export interface JWTPayload {
   sub: string;
   role: 'PUBLIC' | 'OPERATOR';
 }
 
-const router = Router();
+/* ---------- constants ---------- */
+const router      = Router();
 const JWT_SECRET  = process.env.JWT_SECRET  as string;
 const SIGNUP_CODE = process.env.SIGNUP_CODE as string;
 
-/* ---------- Schemas ---------- */
+/* ---------- schemas ---------- */
 const registerSchema = z.object({
   email:      z.string().email(),
   password:   z.string().min(8),
-  signupCode: z.string(),
+  name:       z.string().optional(),      // optional display name
+  signupCode: z.string().optional(),      // optional operator code
 });
 
 const loginSchema = z.object({
@@ -29,7 +31,7 @@ const loginSchema = z.object({
   password: z.string().min(8),
 });
 
-/* ---------- Helper ---------- */
+/* ---------- helpers ---------- */
 function signToken(
   id: string,
   role: 'PUBLIC' | 'OPERATOR',
@@ -44,37 +46,41 @@ function signToken(
  *  POST /auth/register
  * ================================================================= */
 router.post('/register', async (req: Request, res: Response) => {
-  console.log('👉 guarded /register handler');    //  ← TEMP debug line
-
-  const parse = registerSchema.safeParse(req.body);
-  if (!parse.success) {
-    return res.status(422).json({ errors: parse.error.flatten() });
+  /* 1. validate body ------------------------------------------------ */
+  const parsed = registerSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(422).json({ errors: parsed.error.flatten() });
   }
-  const { email, password, signupCode } = parse.data;
+  const { email, password, name, signupCode } = parsed.data;
 
-  // sign-up-code gate
-  if (signupCode !== SIGNUP_CODE) {
+  /* 2. signup-code gate -------------------------------------------- */
+  if (signupCode && signupCode !== SIGNUP_CODE) {
     return res.status(403).json({ message: 'Invalid sign-up code' });
   }
+  const role = signupCode === SIGNUP_CODE ? 'OPERATOR' : 'PUBLIC';
 
+  /* 3. create user -------------------------------------------------- */
   const passwordHash = await bcrypt.hash(password, 12);
   const user = await prisma.user.create({
-    data: { email, passwordHash, role: 'OPERATOR' },
+    data: { email, passwordHash, role, name },
   });
 
-  const token = signToken(user.id, 'OPERATOR');
-  return res.status(201).json({ token });
+  /* 4. respond ------------------------------------------------------ */
+  return res.status(201).json({
+    id: user.id,
+    email: user.email,
+  });
 });
 
 /* =================================================================
  *  POST /auth/login
  * ================================================================= */
 router.post('/login', async (req: Request, res: Response) => {
-  const parse = loginSchema.safeParse(req.body);
-  if (!parse.success) {
-    return res.status(422).json({ errors: parse.error.flatten() });
+  const parsed = loginSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(422).json({ errors: parsed.error.flatten() });
   }
-  const { email, password } = parse.data;
+  const { email, password } = parsed.data;
 
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) return res.status(401).json({ message: 'Login failed' });
@@ -87,5 +93,4 @@ router.post('/login', async (req: Request, res: Response) => {
 });
 
 export default router;
-
 

@@ -1,106 +1,69 @@
-// src/routes/hotels.ts
-import { Router } from 'express';
+/* ----------------------------------------------------------------
+ *  src/routes/hotels.ts
+ * ---------------------------------------------------------------- */
+import { Router, Request, Response } from 'express';
+import prisma from '@/lib/prisma';
 import { z } from 'zod';
-import { Prisma } from '@prisma/client';
-
-import requireAuth from '../middleware/requireAuth';
-import { HotelRepo } from '../repositories/hotelRepo';
 
 const router = Router();
 
-/* ────────────────── validation schemas ────────────────── */
-const hotelBody = z.object({
-  name: z.string().min(3),
-  description: z.string().nullable().default(null),          // nullable ↔ Prisma type
-  city: z.string(),
-  country: z.string(),
-  pricePerNight: z
-    .coerce.number()
-    .positive()
-    .transform(v => new Prisma.Decimal(v)),                  // number → Decimal
-  availableFrom: z.coerce.date(),
-  availableTo: z.coerce.date(),
+/* ---------- helpers ---------- */
+const intString = z
+  .string()
+  .regex(/^\d+$/);            // digits only, so "zero" fails validation
+
+/* ---------- query schema ---------- */
+const listQuery = z.object({
+  page:  intString.default('1').transform(Number),
+  limit: intString
+    .default('20')
+    .transform(Number)
+    .refine(n => n >= 5 && n <= 50, {
+      message: 'limit must be between 5 and 50',
+    }),
+  city:     z.string().optional(),
+  priceMin: z
+    .preprocess(v => (v === undefined ? undefined : Number(v)), z.number().positive())
+    .optional(),
+  priceMax: z
+    .preprocess(v => (v === undefined ? undefined : Number(v)), z.number().positive())
+    .optional(),
 });
 
-const idParam = z.string().uuid();
-
-/* ────────────────────── helpers ────────────────────────── */
-function parseId(id: string) {
-  const parsed = idParam.safeParse(id);
-  if (!parsed.success) throw Object.assign(new Error('Invalid hotel id'), { status: 400 });
-  return parsed.data;
-}
-
-function buildListFilter(q: Record<string, unknown>) {
-  const { city, country, minPrice, maxPrice } = q;
-  const where: Record<string, any> = {};
-
-  if (city) where.city = city as string;
-  if (country) where.country = country as string;
-  if (minPrice || maxPrice) {
-    where.pricePerNight = {
-      ...(minPrice ? { gte: new Prisma.Decimal(minPrice as string) } : {}),
-      ...(maxPrice ? { lte: new Prisma.Decimal(maxPrice as string) } : {}),
-    };
+/* =================================================================
+ *  GET /hotels — public list with pagination and filters
+ * ================================================================= */
+router.get('/', async (req: Request, res: Response) => {
+  /* 1. validate query --------------------------------------------- */
+  const parsed = listQuery.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(422).json({ errors: parsed.error.flatten() });
   }
-  return where;
-}
+  const { page, limit, city, priceMin, priceMax } = parsed.data;
 
-/* ────────────────────── CREATE ─────────────────────────── */
-router.post('/', requireAuth, async (req, res, next) => {
-  try {
-    const data = hotelBody.parse(req.body);
-    const hotel = await HotelRepo.create(data);
-    res.status(201).json(hotel);
-  } catch (err) {
-    next(err);
-  }
-});
+  /* 2. build Prisma filter ---------------------------------------- */
+  const where: any = {};
+  if (city)      where.city = { equals: city, mode: 'insensitive' };
+  if (priceMin)  where.pricePerNight = { gte: priceMin };
+  if (priceMax)  where.pricePerNight = { ...(where.pricePerNight ?? {}), lte: priceMax };
 
-/* ────────────────────── LIST ───────────────────────────── */
-router.get('/', async (req, res, next) => {
-  try {
-    const hotels = await HotelRepo.list(buildListFilter(req.query));
-    res.json(hotels);
-  } catch (err) {
-    next(err);
-  }
-});
+  /* 3. query DB (count + paged rows) ------------------------------ */
+  const [ total, data ] = await prisma.$transaction([
+    prisma.hotel.count({ where }),
+    prisma.hotel.findMany({
+      where,
+      skip: (page - 1) * limit,
+      take: limit,
+      orderBy: { createdAt: 'desc' },
+    }),
+  ]);
 
-/* ────────────────────── READ ONE ───────────────────────── */
-router.get('/:id', async (req, res, next) => {
-  try {
-    const id = parseId(req.params.id);
-    const hotel = await HotelRepo.findById(id);
-    if (!hotel) return res.status(404).json({ msg: 'Hotel not found' });
-    res.json(hotel);
-  } catch (err) {
-    next(err);
-  }
-});
-
-/* ────────────────────── UPDATE ─────────────────────────── */
-router.patch('/:id', requireAuth, async (req, res, next) => {
-  try {
-    const id = parseId(req.params.id);
-    const data = hotelBody.partial().parse(req.body);
-    const hotel = await HotelRepo.update(id, data);
-    res.json(hotel);
-  } catch (err) {
-    next(err);
-  }
-});
-
-/* ────────────────────── DELETE ─────────────────────────── */
-router.delete('/:id', requireAuth, async (req, res, next) => {
-  try {
-    const id = parseId(req.params.id);
-    const deleted = await HotelRepo.remove(id);           // returns count
-    if (deleted === 0) return res.status(404).json({ msg: 'Hotel not found' });
-    res.status(204).end();                                // success, no body
-  } catch (err) {
-    next(err);
-  }
+  /* 4. respond ----------------------------------------------------- */
+  res.json({
+    data,
+    meta: { page, limit, total },
+  });
 });
 
 export default router;
+
