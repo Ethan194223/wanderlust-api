@@ -1,19 +1,74 @@
-openapi: 3.0.3
-info:
-  title: Wanderlust API
-  version: "1.0.0"
-  description: |
-    REST API for Wanderlust coursework – authentication, hotels, profiles.
-
-servers:
-  - url: http://localhost:3000
-
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+
+  schemas:
+    # ─────────────────────────── Auth ────────────────────────────
+    RegisterBody:
+      type: object
+      properties:
+        email:      { type: string, format: email }
+        password:   { type: string, minLength: 8 }
+        name:       { type: string }
+        signupCode: { type: string }
+      required: [email, password]
+
+    LoginBody:
+      type: object
+      properties:
+        email:    { type: string, format: email }
+        password: { type: string }
+      required: [email, password]
+
+    # ─────────────────────────── Hotels ──────────────────────────
+    HotelCreate:
+      type: object
+      properties:
+        name:          { type: string, minLength: 3 }
+        description:   { type: string, minLength: 5 }
+        city:          { type: string }
+        country:       { type: string }
+        pricePerNight: { type: number, minimum: 0 }
+        availableFrom: { type: string, format: date-time }
+        availableTo:   { type: string, format: date-time }
+      required:
+        [name, description, city, country, pricePerNight, availableFrom, availableTo]
+
+    HotelUpdate:
+      allOf:
+        - $ref: '#/components/schemas/HotelCreate'
+      required: []     # everything optional for update
+
+    Hotel:
+      allOf:
+        - $ref: '#/components/schemas/HotelCreate'
+      properties:
+        id:        { type: string, format: uuid, readOnly: true }
+        createdAt: { type: string, format: date-time, readOnly: true }
+        updatedAt: { type: string, format: date-time, readOnly: true }
+      required: [id]
+
+    HotelListItem:
+      type: object
+      required: [id, name, city, country, price]
+      properties:
+        id:      { type: string, format: uuid }
+        name:    { type: string }
+        city:    { type: string }
+        country: { type: string }
+        price:   { type: string }
+
+    PaginationMeta:
+      type: object
+      required: [page, limit, total, lastPage]
+      properties:
+        page:     { type: integer, example: 1 }
+        limit:    { type: integer, example: 20 }
+        total:    { type: integer, example: 100 }
+        lastPage: { type: integer, example: 5 }
 
 security:
   - bearerAuth: []
@@ -29,10 +84,11 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/RegisterBody'
-          responses:
+      responses:
         '201': { description: Created }
         '403': { description: Invalid signup code }
         '422': { description: Validation error }
+
   /auth/login:
     post:
       tags: [Auth]
@@ -44,21 +100,21 @@ paths:
             schema:
               $ref: '#/components/schemas/LoginBody'
       responses:
-        "200": { description: OK }
-        "401": { description: Login failed }
-        "422": { description: Validation error }
+        '200': { description: OK }
+        '401': { description: Login failed }
+        '422': { description: Validation error }
 
   /hotels:
     get:
       tags: [Hotels]
-      summary: List hotels with pagination & filters
+      summary: List hotels (public)
       parameters:
         - in: query
           name: page
-          schema: { type: integer, minimum: 1 }
+          schema: { type: integer, minimum: 1, default: 1 }
         - in: query
           name: limit
-          schema: { type: integer, minimum: 5, maximum: 50 }
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
         - in: query
           name: city
           schema: { type: string }
@@ -69,22 +125,73 @@ paths:
           name: priceMax
           schema: { type: number, minimum: 0 }
       responses:
-        "200":
-          description: Paged list of hotels
+        '200':
+          description: Paginated list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/HotelListItem'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
 
-components:
-  schemas:
-    RegisterBody:
-      type: object
-      properties:
-        email:    { type: string, format: email }
-        password: { type: string, minLength: 8 }
-        name:     { type: string }
-        signupCode: { type: string }
-      required: [email, password]
-    LoginBody:
-      type: object
-      properties:
-        email:    { type: string, format: email }
-        password: { type: string }
-      required: [email, password]
+    post:
+      tags: [Hotels]
+      summary: Create a new hotel (operator only)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HotelCreate'
+      responses:
+        '201':
+          description: Newly created hotel
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Hotel'
+        '400': { description: Validation error }
+
+  /hotels/{id}:
+    put:
+      tags: [Hotels]
+      summary: Update a hotel (operator only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HotelUpdate'
+      responses:
+        '200':
+          description: Updated hotel
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Hotel'
+        '404': { description: Not found }
+
+    delete:
+      tags: [Hotels]
+      summary: Delete a hotel (operator only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Deleted successfully }
+        '404': { description: Not found }
